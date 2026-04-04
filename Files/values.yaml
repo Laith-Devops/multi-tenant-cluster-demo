@@ -1,0 +1,32 @@
+tenants:
+  - name: tenant-001
+    domain: tenant-001.example.com
+  - name: tenant-002
+    domain: tenant-002.example.com
+
+postgres:
+  image: postgres:15
+  replicas: 1
+  port: 5432
+  storage: 2Gi
+
+redis:
+  image: redis:7
+  replicas: 1
+  port: 6379
+  storage: 2Gi
+
+nginx:
+  image: nginx:1.29.7
+  replicas: 1
+  port: 80
+  hpa:
+    minReplicas: 1
+    maxReplicas: 3
+    cpuUtilization: 70
+
+gateway:
+  name: api-gateway
+  namespace: gateway-system
+  port: 80
+  gatewayClassName: nginx #In this demo, the nginx controller is used.

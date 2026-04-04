@@ -1,0 +1,45 @@
+{{- range .Values.tenants }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  selector:
+    app: redis
+    tenant: {{ .name }}
+  ports:
+    - port: {{ $.Values.redis.port }}
+      targetPort: {{ $.Values.redis.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  replicas: {{ $.Values.redis.replicas }}
+  selector:
+    matchLabels:
+      app: redis
+      tenant: {{ .name }}
+  template:
+    metadata:
+      labels:
+        app: redis
+        tenant: {{ .name }}
+    spec:
+      containers:
+      - name: redis
+        image: {{ $.Values.redis.image }}
+        ports:
+        - containerPort: {{ $.Values.redis.port }}
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-pvc-{{ .name }}
+---
+{{- end }}

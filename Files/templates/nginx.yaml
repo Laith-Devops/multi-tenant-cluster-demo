@@ -1,0 +1,43 @@
+{{- range .Values.tenants }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  selector:
+    app: nginx
+    tenant: {{ .name }}
+  ports:
+    - port: {{ $.Values.nginx.port }}
+      targetPort: {{ $.Values.nginx.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  replicas: {{ $.Values.nginx.replicas }}
+  selector:
+    matchLabels:
+      app: nginx
+      tenant: {{ .name }}
+  template:
+    metadata:
+      labels:
+        app: nginx
+        tenant: {{ .name }}
+    spec:
+      containers:
+      - name: nginx
+        image: {{ $.Values.nginx.image }}
+        ports:
+        - containerPort: {{ $.Values.nginx.port }}
+        env:
+        - name: POSTGRES_HOST
+          value: postgres-{{ .name }}.{{ .name }}.svc.cluster.local
+        - name: POSTGRES_PORT
+          value: "{{ $.Values.postgres.port }}"
+---
+{{- end }}

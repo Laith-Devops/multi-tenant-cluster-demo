@@ -1,0 +1,306 @@
+The commands that can be used for this project are: 
+
+
+# The Setup:
+First, create the chart structure:
+mkdir -p multi-tenant-chart/templates
+cd multi-tenant-chart
+
+
+Second, generate the Chart.yaml file inside the multi-tenant-chart directory:
+cat <<'EOF' > Chart.yaml
+apiVersion: v2
+name: multi-tenant-cluster-demo
+description: Multi-Tenant Kubernetes Platform
+type: application
+version: 0.1.0
+appVersion: "1.0"
+EOF
+
+--------> end of chart.yaml
+
+Third, generate the values.yaml file inside the multi-tenant-chart directory:
+cat <<'EOF' > values.yaml
+tenants: #you can name them whatever you want, they will be namespaces in the end
+  - name: tenant-001 
+    domain: tenant-001.example.com
+  - name: tenant-002
+    domain: tenant-002.example.com
+
+postgres:
+  image: postgres:15
+  replicas: 1
+  port: 5432
+  storage: 2Gi
+
+redis:
+  image: redis:7
+  replicas: 1
+  port: 6379
+  storage: 2Gi
+
+nginx:
+  image: nginx:1.29.7
+  replicas: 1
+  port: 80
+  hpa:
+    minReplicas: 1
+    maxReplicas: 3
+    cpuUtilization: 70
+
+gateway:
+  name: api-gateway
+  namespace: gateway-system
+  port: 80
+  gatewayClassName: nginx
+EOF
+--------> end of values.yaml
+
+Fourth, run these commands to generate the templates — these need to be ran inside the templates directory:
+
+cat <<'EOF' > templates/namespaces.yaml
+{{- range .Values.tenants }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .name }}
+#--- add these lines, they are commented so the command entierly does not break.
+{{- end }}
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.gateway.namespace }}
+EOF
+--------> end of namespaces.yaml
+
+cat <<'EOF' > templates/postgres.yaml
+{{- range .Values.tenants }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  selector:
+    app: postgres
+    tenant: {{ .name }}
+  ports:
+    - port: {{ $.Values.postgres.port }}
+      targetPort: {{ $.Values.postgres.port }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  serviceName: postgres-{{ .name }}
+  replicas: {{ $.Values.postgres.replicas }}
+  selector:
+    matchLabels:
+      app: postgres
+      tenant: {{ .name }}
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tenant: {{ .name }}
+    spec:
+      containers:
+      - name: postgres
+        image: {{ $.Values.postgres.image }}
+        ports:
+        - containerPort: {{ $.Values.postgres.port }}
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: {{ $.Values.postgres.storage }}
+---
+{{- end }}
+EOF
+--------> end of postgres.yaml
+cat <<'EOF' > templates/redis.yaml
+{{- range .Values.tenants }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  selector:
+    app: redis
+    tenant: {{ .name }}
+  ports:
+    - port: {{ $.Values.redis.port }}
+      targetPort: {{ $.Values.redis.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  replicas: {{ $.Values.redis.replicas }}
+  selector:
+    matchLabels:
+      app: redis
+      tenant: {{ .name }}
+  template:
+    metadata:
+      labels:
+        app: redis
+        tenant: {{ .name }}
+    spec:
+      containers:
+      - name: redis
+        image: {{ $.Values.redis.image }}
+        ports:
+        - containerPort: {{ $.Values.redis.port }}
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-pvc-{{ .name }}
+---
+{{- end }}
+EOF
+--------> end of redis.yaml
+cat <<'EOF' > templates/nginx.yaml
+{{- range .Values.tenants }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  selector:
+    app: nginx
+    tenant: {{ .name }}
+  ports:
+    - port: {{ $.Values.nginx.port }}
+      targetPort: {{ $.Values.nginx.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  replicas: {{ $.Values.nginx.replicas }}
+  selector:
+    matchLabels:
+      app: nginx
+      tenant: {{ .name }}
+  template:
+    metadata:
+      labels:
+        app: nginx
+        tenant: {{ .name }}
+    spec:
+      containers:
+      - name: nginx
+        image: {{ $.Values.nginx.image }}
+        ports:
+        - containerPort: {{ $.Values.nginx.port }}
+        env:
+        - name: POSTGRES_HOST
+          value: postgres-{{ .name }}.{{ .name }}.svc.cluster.local
+        - name: POSTGRES_PORT
+          value: "{{ $.Values.postgres.port }}"
+---
+{{- end }}
+EOF
+--------> end of nginx.yaml
+cat <<'EOF' > templates/hpa.yaml
+{{- range .Values.tenants }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nginx-hpa-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nginx-{{ .name }}
+  minReplicas: {{ $.Values.nginx.hpa.minReplicas }}
+  maxReplicas: {{ $.Values.nginx.hpa.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ $.Values.nginx.hpa.cpuUtilization }}
+---
+{{- end }}
+EOF
+--------> end of hpa.yaml
+cat <<'EOF' > templates/gateway.yaml
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{ .Values.gateway.name }}
+  namespace: {{ .Values.gateway.namespace }}
+spec:
+  gatewayClassName: {{ .Values.gateway.gatewayClassName }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: {{ .Values.gateway.port }}
+EOF
+--------> end of gateway.yaml
+cat <<'EOF' > templates/httproute.yaml
+{{- range .Values.tenants }}
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: HTTPRoute
+metadata:
+  name: nginx-route-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  parentRefs:
+    - name: {{ $.Values.gateway.name }}
+      namespace: {{ $.Values.gateway.namespace }}
+  hostnames:
+    - "{{ .domain }}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: "/"
+      backendRefs:
+        - name: nginx-{{ .name }}
+          port: {{ $.Values.nginx.port }}
+          kind: Service
+---
+{{- end }}
+EOF
+--------> end of httproute.yaml
+
+
+Fifth, verify the structure is correct:
+find . -type f
+Expected output:
+./Chart.yaml
+./values.yaml
+./templates/namespaces.yaml
+./templates/postgres.yaml
+./templates/redis.yaml
+./templates/nginx.yaml
+./templates/hpa.yaml
+./templates/gateway.yaml
+./templates/httproute.yaml
+Sixth, dry-run to catch any errors:
+helm template multi-tenant-demo .
+Seventh, install the helm chart:
+helm install multi-tenant-demo .

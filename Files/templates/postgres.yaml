@@ -1,0 +1,50 @@
+{{- range .Values.tenants }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  selector:
+    app: postgres
+    tenant: {{ .name }}
+  ports:
+    - port: {{ $.Values.postgres.port }}
+      targetPort: {{ $.Values.postgres.port }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-{{ .name }}
+  namespace: {{ .name }}
+spec:
+  serviceName: postgres-{{ .name }}
+  replicas: {{ $.Values.postgres.replicas }}
+  selector:
+    matchLabels:
+      app: postgres
+      tenant: {{ .name }}
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tenant: {{ .name }}
+    spec:
+      containers:
+      - name: postgres
+        image: {{ $.Values.postgres.image }}
+        ports:
+        - containerPort: {{ $.Values.postgres.port }}
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: {{ $.Values.postgres.storage }}
+---
+{{- end }}

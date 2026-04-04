@@ -1,0 +1,11 @@
+{{- range .Values.tenants }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .name }}
+---
+{{- end }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.gateway.namespace }}
