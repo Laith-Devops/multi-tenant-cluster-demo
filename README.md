@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Multi-Tenant Kubernetes Platform
 This demo is local only and is not suitable for production environment and this is also for testing purposes only, but it shows the importantce of helm.
 This demo demonstrates the importance of kubernetes for real life world projects, as this demo simulation hosts nginx, redis and postgres together in different namespaces, 1 nginx pod and 1 redis pod and 1 postgres pod in one namespace, 1 nginx pod and 1 redis pod and 1 postgres pod also in another namespace. This demo also showcases the importance of using helm in kubernetes, instead of having a lot of yaml files, helm reduces that a lot, in this demo simulation.
@@ -47,10 +47,15 @@ Namespaces for multi-tenant isolation
 Tenant services like:
 
 NGINX (made public through API Gateway or HTTPRoute)
+
 Postgres (PVC + StatefulSet)
+
 Redis (Deployment and PVC)
+
 NGINX's Horizontal Pod Autoscaling (HPA)
+
 Persistent Volumes (PVCs) for services that need to keep their state
+
 HTTPRoute for gateway API routing
 
 
@@ -124,6 +129,3 @@ To verify if it is installed, run:
 kubectl top pods -n tenant-001
 
 
-=======
-# helm-kubernetes-tier-architecture
->>>>>>> 4569c5b6dfd51ab590e5781620243f59aa90c7f9
